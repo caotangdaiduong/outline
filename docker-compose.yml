@@ -1,0 +1,93 @@
+version: "3"
+services:
+  outline:
+    image: outlinewiki/outline
+    env_file: ./docker.env
+    command: sh -c "yarn sequelize:migrate --env production-ssl-disabled && yarn start"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+      - storage
+
+  redis:
+    image: redis
+    env_file: ./docker.env
+    ports:
+      - "6379:6379"
+    # volumes:
+    #   - ./redis.conf:/redis.conf
+    # command: ["redis-server", "/redis.conf"]
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 3
+
+  postgres:
+    image: postgres
+    env_file: ./docker.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready -U user"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: outline
+
+  storage:
+    image: bitnami/minio:latest
+    env_file: ./docker.env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    # entrypoint: sh
+    # command: -c 'minio server'
+    # deploy:
+    #   restart_policy:
+    #     condition: on-failure
+    volumes:
+      - storage-data:/data
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    #   interval: 30s
+    #   timeout: 20s
+    #   retries: 3
+    environment:
+      MINIO_SERVER_ACCESS_KEY: "3c5a6b4d0c39dbbc43316880a62dc96ed32e0553d3ba05c10173e882c0dd30ba"
+      MINIO_SERVER_SECRET_KEY: "5e12acc3be4785db11de5220ed39bce1de1ab9928184f3e3cea4b85f1cba0abf"
+
+  https-portal:
+    image: steveltn/https-portal
+    env_file: ./docker.env
+    ports:
+      - '80:80'
+      - '443:443'
+    links:
+      - outline
+      - storage
+    restart: always
+    volumes:
+      - https-portal-data:/var/lib/https-portal
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    environment:
+      DOMAINS: 'docs.mycompany.com -> http://outline:3000'
+      STAGE: local
+      # STAGE: production
+      WEBSOCKET: true
+volumes:
+  https-portal-data:
+  storage-data:
+  database-data:
